@@ -1,61 +1,90 @@
 import time
 import sys
+import math
 from modules.display import OLEDDisplay
 from modules.adsb import ADSBManager
 
 # --- AVGEEK CONFIGURATION ---
 MY_LAT = 46.219696224968246    # Your Station Latitude
 MY_LON = 7.329450323965796     # Your Station Longitude
-ROTATION_SPEED = 10
+
+
+# --- PAGE CONFIGURATION ---
+# Durations in seconds. Set Page 3 to 15s to enjoy the new map!
+PAGE_DURATIONS = {0: 5, 1: 5, 2: 15, 3: 3} 
+REFRESH_RATE_RADAR = 0.5 # Fast refresh for Moving Map & Compass
+REFRESH_RATE_STATIC = 1  # Refresh rate for static text pages
+
+# Initialize global tracking variables
+page = 0 
+last_page_switch = time.time()
 
 def main():
+    # Use 'global' keyword to modify variables defined outside the function
+    global page, last_page_switch
+    
     try:
+        # Initialize hardware and data manager
         display = OLEDDisplay()
         adsb = ADSBManager()
-        page = 0 
         
         print("--- PiSky-OLED Terminal ---")
         print(f"Base Station Location: {MY_LAT}, {MY_LON}")
         print("Status: Running display rotation...")
 
         while True:
+            # 1. Fetch live aircraft data from ADSB module
             stats = adsb.get_aircraft_stats(MY_LAT, MY_LON)
             
             if stats:
-                # --- DEBUG LOGS ---
+                all_aircraft = stats.get("all_aircraft", [])
                 closest = stats.get("closest")
                 farthest = stats.get("farthest")
                 
-                print(f"\n[DEBUG] Total Aircrafts: {stats['count']}")
-                
-                if closest:
-                    # On print les infos reçues d'OpenSky pour voir si ça dépasse ou si c'est vide
-                    print(f"[DEBUG] Closest: {closest.get('flight')} | Model: {closest.get('model')} | Dist: {closest.get('distance'):.1f}km")
-                else:
-                    print("[DEBUG] No closest aircraft found (missing lat/lon in data)")
+                # Calculate time elapsed since the last page change
+                current_time = time.time()
+                elapsed = current_time - last_page_switch
 
-                if farthest:
-                    print(f"[DEBUG] Farthest: {farthest.get('flight')} | Dist: {farthest.get('distance'):.1f}km")
+                # --- DISPLAY ROTATION LOGIC ---
                 
-                # --- DISPLAY LOGIC ---
+                # PAGE 0: Global Statistics
                 if page == 0:
-                    print("[DEBUG] Switching to Page: Global Status")
-                    display.render_global_status(
-                        count=stats["count"], 
-                        farthest_ac=farthest
-                    )
-                    page = 1
-                else:
-                    print("[DEBUG] Switching to Page: Closest Focus")
-                    display.render_closest_aircraft(
-                        ac=closest
-                    )
-                    page = 0
-            else:
-                print("[DEBUG] Error: stats is None (check tar1090 URL)")
-                display.render_error("No ADSB Data")
+                    display.render_global_status(count=stats["count"], farthest_ac=farthest)
+                    if elapsed >= PAGE_DURATIONS[0]:
+                        page = 1
+                        last_page_switch = current_time
 
-            time.sleep(ROTATION_SPEED)
+                # PAGE 1: Closest Aircraft Details (Text)
+                elif page == 1:
+                    display.render_closest_aircraft(ac=closest)
+                    if elapsed >= PAGE_DURATIONS[1]:
+                        page = 2
+                        last_page_switch = current_time
+
+                # PAGE 2: Radar Homing (Dynamic Arrow for closest AC)
+                elif page == 2:
+                    display.render_radar_homing(ac=closest)
+                    if elapsed >= PAGE_DURATIONS[2]:
+                        page = 3
+                        last_page_switch = current_time
+                    else:
+                        # Short sleep for smooth arrow animation
+                        time.sleep(REFRESH_RATE_RADAR)
+                        continue # Restart loop immediately to refresh data
+
+                # PAGE 3: Moving Map (All nearby aircraft)
+                elif page == 3:
+                    display.render_moving_map(all_aircraft, MY_LAT, MY_LON, zoom_km=15, show_labels=True)
+                    if elapsed >= PAGE_DURATIONS[3]:
+                        page = 0
+                        last_page_switch = current_time
+                    else:
+                        # Short sleep for smooth map movement
+                        time.sleep(REFRESH_RATE_RADAR)
+                        continue
+
+            # Standard idle time for static pages
+            time.sleep(REFRESH_RATE_STATIC)
 
     except KeyboardInterrupt:
         print("\n[Service] Stopping PiSky-OLED...")
@@ -63,7 +92,8 @@ def main():
     except Exception as e:
         print(f"[Critical Error] {e}")
         try:
-            display.render_error("System Crash")
+            # Attempt to show the error message on the OLED
+            display.render_error(f"Error: {str(e)[:15]}")
         except:
             pass
 

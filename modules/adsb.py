@@ -15,6 +15,7 @@ class ADSBManager:
             
             closest = None
             farthest = None
+            all_aircraft = None
             min_dist = float('inf')
             max_dist = 0
 
@@ -48,7 +49,8 @@ class ADSBManager:
             return {
                 "count": len(aircrafts),
                 "closest": closest,
-                "farthest": farthest
+                "farthest": farthest,
+                "all_aircraft": aircrafts
             }
         except Exception:
             return None
