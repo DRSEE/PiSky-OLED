@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>PiSky OLED Simulator - Sharp Edition</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Tiny5&display=swap" rel="stylesheet">
+
+    <style>
+        body { 
+            background: #1a1a1a; 
+            color: white; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            justify-content: center; 
+            height: 100vh; 
+            margin: 0; 
+            font-family: 'Segoe UI', sans-serif; 
+        }
+
+        .screen-container { 
+            border: 10px solid #333; 
+            background: #000; 
+            padding: 5px; 
+            box-shadow: 0 0 30px rgba(0,0,0,0.7);
+            border-radius: 8px;
+        }
+
+        /* Scaling and sharpness management */
+        canvas { 
+            display: block; 
+            width: 512px;  /* 4x original size */
+            height: 256px; 
+            background: #000;
+            /* Disable browser blurring during upscale */
+            image-rendering: pixelated; 
+            image-rendering: crisp-edges; 
+        }
+
+        .debug-info { 
+            margin-top: 15px; 
+            color: #888; 
+            font-family: 'Tiny5', monospace; 
+            font-size: 16px; 
+        }
+    </style>
+</head>
+<body>
+
+    <div class="screen-container">
+        <canvas id="oled" width="128" height="64"></canvas>
+    </div>
+    <div class="debug-info" id="status">INITIALIZING RADAR...</div>
+
+    <script>
+        const canvas = document.getElementById('oled');
+        const ctx = canvas.getContext('2d');
+        
+        // Page rotation settings (in ms)
+        const pageDurations = [5000, 5000, 10000, 8000]; 
+        let currentPage = 0;
+
+        function update() {
+            fetch('/api/data')
+                .then(res => res.json())
+                .then(data => {
+                    render(data);
+                })
+                .catch(err => {
+                    document.getElementById('status').innerText = "API CONNECTION ERROR";
+                });
+        }
+
+        function render(data) {
+            // Disable anti-aliasing for every frame
+            ctx.imageSmoothingEnabled = false;
+
+            // Deep Black Clear
+            ctx.fillStyle = "black";
+            ctx.fillRect(0, 0, 128, 64);
+            
+            // Text Setup
+            ctx.fillStyle = "white";
+            ctx.font = "8px 'Tiny5'";
+
+            // Rotation Logic
+            const totalCycle = pageDurations.reduce((a, b) => a + b, 0);
+            const progress = Date.now() % totalCycle;
+            let acc = 0;
+            for(let i=0; i < pageDurations.length; i++) {
+                acc += pageDurations[i];
+                if (progress < acc) { currentPage = i; break; }
+            }
+
+            // Rendering routing
+            if (currentPage === 0) renderOverview(data);
+            else if (currentPage === 1) renderClosest(data.closest);
+            else if (currentPage === 2) renderRadar(data.closest);
+            else if (currentPage === 3) renderMiniMap(data); 
+
+            document.getElementById('status').innerText = `PAGE ${currentPage} | TOTAL AC: ${data.count || 0}`;
+        }
+
+        function renderOverview(data) {
+            ctx.fillText("PISKY OVERVIEW", 6, 10);
+            ctx.fillRect(0, 12, 128, 1);
+            ctx.fillText(`TOTAL AIRCRAFT: ${data.count || 0}`, 6, 28);
+            if (data.farthest) {
+                ctx.fillText("MAX RANGE:", 6, 42);
+                ctx.fillText(`${(data.farthest.flight || "N/A").trim()} @ ${data.farthest.distance.toFixed(1)}KM`, 6, 55);
+            }
+        }
+
+        function renderClosest(ac) {
+            ctx.fillText("CLOSEST FLIGHT", 6, 10);
+            ctx.fillRect(0, 12, 128, 1);
+            if (!ac) { ctx.fillText("SEARCHING SKY...", 6, 35); return; }
+            
+            ctx.fillText(`FLT: ${ac.flight || "N/A"}`, 6, 25);
+            ctx.fillText(`REG: ${ac.registration || "N/A"}`, 6, 35);
+            ctx.fillText(`MOD: ${ac.model || "N/A"}`, 6, 45);
+            ctx.fillText(`DST: ${ac.distance.toFixed(1)} KM`, 6, 55);
+        }
+
+        function renderRadar(ac) {
+            if (!ac) { 
+                ctx.fillText("SEARCHING SKY...", 6, 35); 
+                return; 
+            }
+            
+            const cx = 32, cy = 32, r = 30;
+            
+            // --- RADAR CIRCLE ---
+            ctx.strokeStyle = "white";
+            ctx.lineWidth = 1;
+            ctx.beginPath(); 
+            ctx.arc(cx, cy, r, 0, Math.PI * 2); 
+            ctx.stroke();
+            
+            // --- CARDINAL POINTS ---
+            ctx.fillStyle = "white";
+            ctx.font = "8px 'Tiny5'";
+            
+            ctx.fillText("N", cx - 2, cy - r + 8); // North
+            ctx.fillText("S", cx - 2, cy + r - 2); // South
+            ctx.fillText("E", cx + r - 7, cy + 3); // East
+            ctx.fillText("W", cx - r + 2, cy + 3); // West
+            
+            // --- AIRCRAFT ARROW ---
+            const angle = (ac.bearing - 90) * (Math.PI / 180);
+            
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate(angle);
+            
+            ctx.beginPath();
+            ctx.moveTo(18, 0);    // Tip
+            ctx.lineTo(-8, 8);    // Back right
+            ctx.lineTo(-4, 0);    // Back notch
+            ctx.lineTo(-8, -8);   // Back left
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+
+            // --- DATA PANEL (RIGHT) ---
+            const flight = ac.flight ? ac.flight.trim() : "N/A";
+            ctx.fillText(flight, 70, 10);
+            ctx.fillRect(68, 12, 55, 1); 
+            
+            ctx.fillText(`${ac.distance.toFixed(1)}KM`, 70, 25);
+            ctx.fillText(`BRG:${Math.round(ac.bearing)}°`, 70, 40);
+            
+            if (ac.altitude) {
+                const altText = ac.altitude > 5000 ? `FL${Math.round(ac.altitude/100)}` : `${Math.round(ac.altitude)}FT`;
+                ctx.fillText(`ALT:${altText}`, 70, 55);
+            }
+        }
+
+        function renderMiniMap(data) {
+            const cx = 64; 
+            const cy = 32; 
+            const scale = 0.5; // Zoom: 1 pixel = 2km
+
+            // 1. Draw center reference (Home)
+            ctx.strokeStyle = "white";
+            ctx.beginPath();
+            ctx.moveTo(cx - 3, cy); ctx.lineTo(cx + 3, cy);
+            ctx.moveTo(cx, cy - 3); ctx.lineTo(cx, cy + 3);
+            ctx.stroke();
+
+            // 2. Draw scale info
+            ctx.font = "8px 'Tiny5'";
+            ctx.fillText("R: 100KM", 2, 60);
+
+            // 3. Draw aircraft points
+            if (data.aircraft && data.aircraft.length > 0) {
+                data.aircraft.forEach(ac => {
+                    const angle = (ac.bearing - 90) * (Math.PI / 180);
+                    const distPx = ac.distance * scale;
+
+                    const x = cx + Math.cos(angle) * distPx;
+                    const y = cy + Math.sin(angle) * distPx;
+
+                    // Bounds check
+                    if (x > 0 && x < 128 && y > 0 && y < 64) {
+                        if (data.closest && ac.adsb_icao === data.closest.adsb_icao) {
+                            // Target indicator for closest AC
+                            ctx.strokeRect(Math.round(x) - 2, Math.round(y) - 2, 4, 4);
+                        } else {
+                            // Single pixel for others
+                            ctx.fillRect(Math.round(x), Math.round(y), 1, 1);
+                        }
+                    }
+                });
+            }
+        }
+
+        setInterval(update, 500);
+    </script>
+</body>
+</html>

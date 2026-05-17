@@ -5,9 +5,10 @@ from modules.display import OLEDDisplay
 from modules.adsb import ADSBManager
 
 # --- AVGEEK CONFIGURATION ---
-MY_LAT = 46.219696224968246    # Your Station Latitude
-MY_LON = 7.329450323965796     # Your Station Longitude
-
+#MY_LAT = 46.219696224968246    # Your Station Latitude
+#MY_LON = 7.329450323965796     # Your Station Longitude
+MY_LAT = 45.77050
+MY_LON = 5.00443
 
 # --- PAGE CONFIGURATION ---
 # Durations in seconds. Set Page 3 to 15s to enjoy the new map!
