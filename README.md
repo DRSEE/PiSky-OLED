@@ -1,114 +1,102 @@
-#  PiSky-OLED By DRSEE
+# PiSky-OLED By DRSEE
 
-**The companion for AvGeeks to monitor their home ADSB ground station in real-time.**
+**A physical dashboard for your home ADS-B ground station, on a tiny 128×64 OLED.**
 
-PiSky-OLED is a dedicated monitoring tool designed for aviation enthusiasts who want a physical dashboard for their ADSB setup. Instead of checking a web interface, you get a quick live OLED display featuring a GNS-style **Moving Map**, a **Radar Homing** needle for the closest traffic, and detailed aircraft metadata.
+PiSky-OLED turns a cheap SSD1306 screen wired to your Raspberry Pi into a live companion for your
+`readsb` / `tar1090` receiver: traffic count, the closest aircraft, an animated radar scope,
+your local airfields and the health of your receiver — without opening a browser.
 
----
-
-##  Features
-
-* **Four-Page Dynamic Dashboard**:
-* **Page 1 (Sky Overview)**: Total aircraft count and your station's all-time distance range record.
-* **Page 2 (Closest Focus)**: Detailed text data for the nearest plane (Callsign, Registration, Model, Distance).
-* **Page 3 (Radar Homing)**: A visual compass/needle pointing directly toward the closest aircraft, updating in real-time (**0.5s refresh**).
-* **Page 4 (Moving Map)**: A minimalist, vector-based radar screen showing all nearby traffic with **Dynamic Scaling** (arrow size adjusts based on zoom).
-
-
-* **Advanced Metadata Enrichment**: Fetches real aircraft models (e.g., "Airbus A321") and registrations via the OpenSky Network API.
-* **Smart Logic & Refresh**:
-* Static pages stay for 5s.
-* Dynamic pages (Radar/Map) stay for 15s with high-frequency updates for smooth motion.
-
-
-* **Toggleable Labels**: Option to hide callsigns on the map for a cleaner "stealth" look.
+<p align="center">
+  <img src="docs/images/radar.gif" alt="Animated radar page" width="536">
+</p>
 
 ---
 
-##  Prerequisites
+## Pages
+
+The screen rotates through five pages (durations are configurable). A thin bar at the bottom
+shows the time left before the next page.
+
+| | |
+|:---:|:---:|
+| <img src="docs/images/dashboard.png" width="400"><br>**Dashboard** — total aircraft, aircraft with position, local QNH, max range, messages/s | <img src="docs/images/closest.png" width="400"><br>**Closest aircraft** — callsign, registration & type, bearing arrow, altitude (QNH below the transition altitude, flight level above), climb/descent, ground speed, `FIN` badge on final approach |
+| <img src="docs/images/radar.gif" width="400"><br>**Radar** — round scope with sweep, aircraft drawn along their track, automatic range (15 / 30 / 60 km) and the four closest aircraft | <img src="docs/images/airports.png" width="400"><br>**Airfields** — QNH and traffic within 5 NM of each watched airfield, aircraft on final, last movement (landing, take-off, touch-and-go, circuit) |
+| <img src="docs/images/system.png" width="400"><br>**System** — CPU temperature & load, RAM, uptime, receiver messages/s, signal/noise (from `readsb`), IP address | <img src="docs/images/alert.png" width="400"><br>**Alert** — takes over the screen for 10 s on emergency squawks (7500 / 7600 / 7700) or a military aircraft inside your alert range |
+
+> Screen labels are in French (e.g. *PLUS PROCHE* = closest, *TERRAINS* = airfields, *SYSTEME* = system).
+> The images above are generated from live data with `preview.py --demo`.
+
+---
+
+## Features
+
+* **Readable at a glance** — large vector digits for key values, crisp bitmap font for labels, inverted header bar.
+* **Rich aircraft data** — registration, type, QNH-corrected altitude, final approach and airfield movements
+  come from a companion ADS-B radar web app (HTTP API on port `5001`) when it runs on the same Pi.
+  Without it, PiSky-OLED falls back to the raw `tar1090` `aircraft.json` feed.
+* **Receiver health** — messages per second and signal/noise read from `/run/readsb/stats.json`.
+* **Priority alerts** — emergency squawks and nearby military traffic interrupt the rotation.
+* **OLED care** — the whole picture shifts by one pixel every 2 minutes to limit burn-in, and brightness
+  drops automatically at night (22:00 – 07:00 by default).
+* **Light on resources** — about 8 % of one CPU core on a Raspberry Pi 3B+.
+* **Hardware-free previews** — `preview.py` renders every page to PNG (and the radar to an animated GIF).
+
+---
+
+## Prerequisites
 
 ### Hardware
 
-1. **Raspberry Pi** (3, 4, 5).
-2. **ADSB Receiver** (RTL-SDR Stick + Antenna).
-3. **OLED Display (SSD1306)**: 128x64 pixels, connected via **I2C**.
+1. **Raspberry Pi** (3, 4 or 5).
+2. **ADS-B receiver** (RTL-SDR stick + antenna).
+3. **SSD1306 OLED**, 128×64 pixels, connected via **I2C** (address `0x3C`).
 
 ### Software
 
-* **ADSB Image**: Optimized for [ADSBExchange](https://www.adsbexchange.com/how-to-feed/) or any OS running `readsb` / `dump1090-fa`.
-* **Python 3.7+**.
-* **I2C Enabled**: `sudo raspi-config` > Interface Options > I2C > Enable.
+* An ADS-B image running `readsb` + `tar1090` (e.g. [ADSBExchange](https://www.adsbexchange.com/how-to-feed/)).
+* **Python 3.7+** with **Pillow** (DejaVu fonts are used when available: `fonts-dejavu-core`).
+* **I2C enabled**: `sudo raspi-config` → Interface Options → I2C → Enable.
 
 ---
 
-##  Installation & Setup
+## Installation
 
-1. **Clone the repository**:
 ```bash
-git clone https://github.com/YOUR_USERNAME/PiSky-OLED.git
+git clone https://github.com/DRSEE/PiSky-OLED.git
 cd PiSky-OLED
-```
-
-
-2. **Install Python dependencies**:
-```bash
 pip3 install -r requirements.txt
 ```
 
+## Configuration
 
-3. **Configure your station**:
-Open `main.py` to set your coordinates and preferences:
+Everything is at the top of `main.py`:
+
 ```python
-MY_LAT = 48.8566    # Your Station Latitude
-MY_LON = 2.3522     # Your Station Longitude
-PAGE_DURATIONS = {0: 5, 1: 5, 2: 15, 3: 15} # Seconds per page
-```
+MY_LAT = 48.8566                 # station position (replaced by the radar app's settings when available)
+MY_LON = 2.3522
 
-
-
----
-
-##  Project Structure
-
-```text
-PiSky-OLED/
-├── main.py              # Main orchestrator (Loop & Logic)
-├── requirements.txt     # Python dependencies
-├── README.md            # Documentation
-└── modules/
-    ├── __init__.py      # Package initialization
-    ├── adsb.py          # Data fetcher (Parses aircraft.json)
-    ├── aircraft.py      # OpenSky API & Caching logic
-    ├── display.py       # OLED Rendering engine (Maps, Radar, Text)
-    ├── geo_utils.py     #  (Distance, Bearing, Projections)
-    └── system.py        # System monitoring (IP/Temp)
-
+PAGE_DURATIONS = {'dashboard': 6, 'closest': 8, 'radar': 15, 'airports': 8, 'system': 5}  # 0 = disabled
+FPS = {'radar': 4}               # frames per second for animated pages (1 by default)
+ALERT_SHOW_S = 10                # alert screen duration
+NIGHT = (22, 7)                  # dimmed between 22:00 and 07:00
+CONTRAST_DAY, CONTRAST_NIGHT = 255, 8
+PIXEL_SHIFT_S = 120              # anti burn-in pixel shift period
 ```
 
 ---
 
-##  Usage
-
-Run the script manually to test:
+## Usage
 
 ```bash
-python3 main.py
-
+python3 main.py                        # run on the OLED
+python3 preview.py                     # PNG previews of every page in ./preview
+python3 preview.py docs/images --demo  # README images (IP masked) + animated radar GIF
 ```
 
-###  Run on Boot (Systemd)
+### Run on boot (systemd)
 
-To make **PiSky-OLED** start automatically:
-
-1. **Create the service file**:
-```bash
-sudo nano /etc/systemd/system/pisky.service
-
-```
-
-
-2. **Paste the configuration**:
 ```ini
+# /etc/systemd/system/pisky.service
 [Unit]
 Description=PiSky OLED Service
 After=network.target
@@ -121,28 +109,40 @@ User=pi
 
 [Install]
 WantedBy=multi-user.target
-
 ```
 
-
-3. **Enable and start**:
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable pisky.service
-sudo systemctl start pisky.service
-
+sudo systemctl enable --now pisky.service
 ```
 
+---
 
+## Project structure
+
+```text
+PiSky-OLED/
+├── main.py              # Page rotation, alerts, night dimming, pixel shift
+├── preview.py           # Renders pages to PNG / GIF without a screen
+├── requirements.txt
+├── docs/images/         # README screenshots
+├── modules/
+│   ├── datasource.py    # Radar API client, tar1090 fallback, system & receiver stats
+│   ├── display.py       # Page rendering engine (128×64, 1-bit)
+│   ├── adsb.py          # Legacy tar1090 reader (used by the web simulator)
+│   ├── aircraft.py      # Legacy metadata lookup (used by the web simulator)
+│   ├── geo_utils.py     # Distance / bearing helpers
+│   └── system.py        # Legacy system helpers
+└── simulation/          # Browser-based OLED simulator (Flask)
+```
 
 ---
 
-##  Contributing
+## Contributing
 
-As an aviation enthusiast (**AvGeek**), feel free to fork this project, open issues, or submit pull requests. Every contribution to improve the tracking experience is welcome!
+As an aviation enthusiast (**AvGeek**), feel free to fork this project, open issues or submit pull requests.
+Every contribution to improve the tracking experience is welcome!
 
----
-
-##  License
+## License
 
 This project is licensed under the **MIT License**.
